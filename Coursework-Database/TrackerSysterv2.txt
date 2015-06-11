@@ -1,0 +1,186 @@
+DROP DATABASE IF EXISTS `Tracker`;
+
+CREATE DATABASE `Tracker`;
+
+USE `Tracker`;
+
+CREATE TABLE `Tracker`.`Programmers` (
+	`id` TINYINT NOT NULL  AUTO_INCREMENT ,
+	`first_name` VARCHAR( 255 ) NOT NULL ,
+	`last_name` VARCHAR( 255 ) NOT NULL ,
+	`phone` VARCHAR( 32 ) NULL DEFAULT NULL,
+        `address` TEXT NULL DEFAULT NULL ,
+	PRIMARY KEY ( `id` )
+) ENGINE = InnoDB;
+
+CREATE TABLE `Tracker`.`Projects` (
+	`id` TINYINT NOT NULL AUTO_INCREMENT ,
+	`name` VARCHAR( 255 ) NOT NULL ,
+	`project_path` VARCHAR( 255 ) NOT NULL ,
+	`start_date` DATE NOT NULL ,
+	PRIMARY KEY ( `id` )
+) ENGINE = InnoDB;
+
+CREATE TABLE `Tracker`.`ProjectFiles` (
+	`id` TINYINT NOT NULL AUTO_INCREMENT ,
+	`source_code` VARCHAR( 255 ) NULL DEFAULT NULL ,
+	`project_id` TINYINT NOT NULL ,
+	`programmer_id` TINYINT NOT NULL ,
+	PRIMARY KEY( `id` ),
+	FOREIGN KEY ( `project_id` )
+		REFERENCES `Tracker`.`Projects`( `id` )
+		ON DELETE CASCADE ON UPDATE CASCADE,
+	FOREIGN KEY ( `programmer_id` )
+		REFERENCES `Tracker`.`Programmers`( `id` )
+		ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE = InnoDB;
+	
+
+CREATE TABLE `Tracker`.`Changes` (
+	`id` TINYINT NOT NULL AUTO_INCREMENT ,
+	`files_id` TINYINT NOT NULL ,
+	`project_id` TINYINT NOT NULL ,
+	`programmer_id` TINYINT NOT NULL ,
+	`new_change` TINYTEXT NOT NULL ,
+	`prev_change` TINYINT NULL DEFAULT NULL ,
+	`date` DATE NOT NULL ,
+	PRIMARY KEY( `id` ),
+	FOREIGN KEY ( `files_id` )
+		REFERENCES `Tracker`.`ProjectFiles`( `id` )
+		ON DELETE CASCADE ON UPDATE CASCADE ,
+	FOREIGN KEY ( `prev_change` )
+		REFERENCES `Tracker`.`Changes`( `id` )
+		ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE = InnoDB;
+
+GRANT ALL	
+ON `Tracker`.*
+TO 'ridvan'@'localhost'
+IDENTIFIED BY 'secret';
+
+INSERT INTO `Tracker`.`Programmers` (`id` , `first_name` , `last_name` , `phone` , `address` )
+VALUES  ( NULL , 'Petur' , 'Petrov' , 0888523112 , NULL ),
+	( NULL , 'Ivan' , 'Ivanov' , NULL , NULL ),
+	( NULL , 'Stoyan' , 'Stoilov' , NULL , NULL );
+
+INSERT INTO `Tracker`.`Projects` (`id` , `name` , `project_path` , `start_date` )
+VALUES  ( NULL , 'BullsAndCows' , 'C:\\Users\\Ridvan\\Desktop\\Project1' , '2015-05-14' );
+
+INSERT INTO `Tracker`.`ProjectFiles` (`id` , `project_id` , `programmer_id` , `source_code` )
+VALUES  ( NULL , 1 , 1 , 'C:\\Users\\Ridvan\\Desktop\\Project1\\MainClass.txt' ),
+	( NULL , 1 , 2 , 'C:\\Users\\Ridvan\\Desktop\\Project1\\Participants.txt' ),
+	( NULL , 1 , 3 , 'C:\\Users\\Ridvan\\Desktop\\Project1\\PC.txt' ),
+	( NULL , 1 , 1 , 'C:\\Users\\Ridvan\\Desktop\\Project1\\Methods.txt' );
+
+DELIMITER //
+CREATE TRIGGER updateChanges
+AFTER UPDATE ON ProjectFiles FOR EACH ROW
+BEGIN
+SET @previous = ( SELECT Changes.id FROM Changes WHERE Changes.date IN (
+							SELECT MAX(date)
+							FROM Changes
+							WHERE Changes.files_id = NEW.id
+							) 
+);
+INSERT INTO `Tracker`.`Changes` (`id` ,`project_id` , `files_id` , `programmer_id` , `new_change` , `prev_change` , `date`)
+VALUES ( NULL , NEW.project_id , NEW.id , NEW.programmer_id , NEW.source_code , @previous , NOW() );
+END;//
+DELIMITER ;
+
+UPDATE ProjectFiles
+SET programmer_id = 3, source_code = 'C:\\Users\\Ridvan\\Desktop\\Project1\\TEST.txt'
+WHERE id = 1;
+
+UPDATE ProjectFiles
+SET programmer_id = 2, source_code = 'C:\\Users\\Ridvan\\Desktop\\Project1\\BullsAndCows.txt'
+WHERE id = 1;
+
+UPDATE ProjectFiles
+SET programmer_id = 1, source_code = 'C:\\Users\\Ridvan\\Desktop\\Project1\\Player.txt'
+WHERE id = 2;
+
+UPDATE ProjectFiles
+SET programmer_id = 2, source_code = 'C:\\Users\\Ridvan\\Desktop\\Project1\\Computer.txt'
+WHERE id = 3;
+
+UPDATE ProjectFiles
+SET programmer_id = 3, source_code = 'C:\\Users\\Ridvan\\Desktop\\Project1\\Checkers.txt'
+WHERE id = 4;
+
+
+DELIMITER |
+CREATE PROCEDURE show_programmers()
+BEGIN
+SELECT * FROM Programmers;
+END
+|
+
+CREATE PROCEDURE show_projects()
+BEGIN
+SELECT * FROM Projects;
+END
+|
+
+CREATE PROCEDURE show_project_files(IN project_name VARCHAR(255))
+BEGIN
+SELECT ProjectFiles.id , ProjectFiles.source_code , Programmers.first_name , Programmers.last_name  
+FROM ProjectFiles , Programmers WHERE ProjectFiles.project_id IN (
+				SELECT Projects.id
+				FROM Projects
+				WHERE Projects.name = project_name )
+			AND ProjectFiles.programmer_id = Programmers.id;
+END
+|
+
+CREATE PROCEDURE show_all_changes_on_project(IN project_name VARCHAR(255))
+BEGIN
+SELECT * FROM Changes WHERE Changes.project_id IN (
+				SELECT Projects.id
+				FROM Projects
+				WHERE Projects.name = project_name );
+END
+|
+
+CREATE PROCEDURE show_changes_on_selected_project_file(IN file_id INT, IN project_name VARCHAR(255))
+BEGIN
+SELECT Changes.id , Changes.new_change , Changes.prev_change , Programmers.first_name , Programmers.last_name , Changes.date
+FROM Changes, Programmers WHERE Changes.files_id = file_id
+			  AND Changes.project_id IN (
+				SELECT Projects.id
+				FROM Projects
+				WHERE Projects.name = project_name )
+			  AND Changes.programmer_id = Programmers.id
+ORDER BY Changes.id;
+END
+|
+
+CREATE PROCEDURE show_latest_update_on_selected_project_file(IN file_id INT, IN project_name VARCHAR(255))
+BEGIN
+SELECT Changes.id , Changes.new_change , Programmers.first_name , Programmers.last_name , Changes.prev_change , Changes.date
+FROM Changes, Programmers WHERE Changes.id IN (
+				SELECT MAX(id)
+				FROM Changes
+				WHERE Changes.files_id = file_id
+				AND Changes.project_id IN (
+					SELECT Projects.id
+					FROM Projects
+					WHERE Projects.name = project_name )
+				)
+			  AND Changes.programmer_id = Programmers.id;
+END
+|
+
+CREATE PROCEDURE show_changes_on_selected_project_file_by_date(IN file_id INT, IN project_name VARCHAR(255), IN date DATE)
+BEGIN
+SELECT Changes.id , Changes.new_change , Changes.prev_change , Programmers.first_name , Programmers.last_name
+FROM Changes, Programmers WHERE Changes.files_id = file_id
+			  AND Changes.project_id IN (
+				SELECT Projects.id
+				FROM Projects
+				WHERE Projects.name = project_name )
+			  AND Changes.date = date 
+			  AND Changes.programmer_id = Programmers.id;
+END
+|
+
+DELIMITER ;
